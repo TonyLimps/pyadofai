@@ -12,7 +12,7 @@ class adofai:
         with open(path,'r',encoding='utf-8-sig') as text:
             #读取文件并转为字典
             text = text.read()
-            text = text.replace('""','"\\\\0"')
+            text = text.replace('""','"\\\\0"').replace(', }','').replace('\n','')
             Dict = json.loads(text)
             try:
                 self.pathData = Dict['pathData']
