@@ -1,3 +1,4 @@
+import re
 import json
 import pandas as pd
 
@@ -5,15 +6,16 @@ import pandas as pd
 adofai lib by TonyLimps 2025
 '''
 class adofai:
+    path = ''
     def __init__(self,path):
         
         #adofai(adofai文件路径) 这是一个adofai类
-        
         with open(path,'r',encoding='utf-8-sig') as text:
             #读取文件并转为字典
             text = text.read()
-            text = text.replace('""','"\\\\0"').replace(', }','').replace('\n','')
+            text = text.replace('""','" "').replace(', }','').replace('\n','')
             Dict = json.loads(text)
+            self.path = path
             try:
                 self.pathData = Dict['pathData']
             except KeyError:
@@ -263,9 +265,22 @@ class adofai:
         angleData = list(pathData.map(mapping))
         self.__dict__.pop('pathData')
         self.__dict__['angleData'] = angleData 
-    def write(self,path):
-        #adofai().write(文件路径)
-        #写入adofai文件
-        self = self.replace('\\0','')
-        with open(path,'w') as f:
-            json.dump(self,f,indent=4)
+    def save(self):
+        #adofai().save()
+        #保存adofai文件
+        file = self.__dict__
+        path = self.path
+        
+        with open(path,'w+',encoding='utf-8') as f:
+            #先把self转成字典dump进去，变成字符串好处理
+            json.dump(file,f,indent=4)
+        with open(path,'r',encoding='utf-8') as f:
+            #不能用w模式，否则直接清空，读到的是空白，r和w必须分开
+            file = f.read()
+        with open(path,'w',encoding='utf-8') as f:
+            #去除无用的东西
+            file = re.sub('"path":.*?,','',file)
+            file = re.sub('" "','""',file)
+            f.write(file)
+    def removeEvents(self):
+        pass#待办:移除事件
