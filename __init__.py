@@ -371,5 +371,17 @@ class adofai:
             file = re.sub('" "', '""', file)
             f.write(file)
 
-    def removeEvents(self):
-        pass  # 待办:移除事件
+    def removeEvents(self,args={}):
+        #adofai().removeEvents( {参数:值} )
+        #去除符合条件的事件
+        #示例:removeEvents({'floor':100})去除第100格的事件
+
+        actions = copy.deepcopy(self.actions)
+        keys = list(args.keys())
+        for action in range(len(actions)):
+            conform = 0
+            for i in keys:
+                if actions[action][i] == args[i]:
+                    conform+=1
+                if conform == len(keys):
+                    self.actions.pop(action)
