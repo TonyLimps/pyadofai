@@ -22,7 +22,7 @@ class adofai:
         with open(path, 'r', encoding='utf-8-sig') as text:
             # 读取文件并转为字典
             text = text.read()
-            text = text.replace('""', '"\\\\0"').replace(',}', '').replace('\n', '')
+            text = text.replace('""', '" "').replace(',}', '').replace('\n', '')
             Dict = json.loads(text)
             try:
                 self.pathData = Dict['pathData']
@@ -367,7 +367,6 @@ class adofai:
             file = f.read()
         with open(path, 'w', encoding='utf-8') as f:
             # 去除无用的东西
-            file = re.sub('"path":.*?,', '', file)
             file = re.sub('" "', '""', file)
             f.write(file)
 
