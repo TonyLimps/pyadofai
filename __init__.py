@@ -1,26 +1,25 @@
-import json
-import pandas as pd
-import re
 import copy
+import json
+import re
+
+import pandas as pd
 
 '''
-adofai lib by TonyLimps 2025
-bug fix & dlc support by Skyland_Redstone 2025
+adofai lib by TonyLimps & Skyland_Redstone 2025
 '''
 
 
 class adofai:
-    # adofai 2.9.2发卡弯带暂停bug状态:
-    # 双球: 0
-    # 三球: 1
-    # bug更新后只需要修改下方两个常量
-    TWO_PLANET_PAUSE_BEAT_DIFF = 0
-    THREE_PLANET_PAUSE_BEAT_DIFF = 1
+    # adofai 2.9.2发卡弯带暂停bug原理未知
+    # 先别管
+    TWO_PLANET_PAUSE_BEAT_DIFF = -1
+    THREE_PLANET_PAUSE_BEAT_DIFF = -1
 
     def __init__(self, path):
 
         # adofai(adofai文件路径) 这是一个adofai类
 
+        self.path = path
         with open(path, 'r', encoding='utf-8-sig') as text:
             # 读取文件并转为字典
             text = text.read()
@@ -28,8 +27,10 @@ class adofai:
             Dict = json.loads(text)
             try:
                 self.pathData = Dict['pathData']
+                self.floorNum = len(self.pathData)
             except KeyError:
                 self.angleData = Dict['angleData']
+                self.floorNum = len(self.angleData)
             self.settings = Dict['settings']
             self.actions = Dict['actions']
             try:
@@ -135,7 +136,7 @@ class adofai:
 
         # 处理三球事件
         lastTileOfThreePlanets = -1
-        planetNumList[len(rotateAngleList)] = 2  # 最后清算持续到结束的三球
+        planetNumList[self.floorNum] = 2  # 最后清算持续到结束的三球
         for i in planetNumList:
             if planetNumList[i] == 3 and lastTileOfThreePlanets == -1:
                 lastTileOfThreePlanets = i
@@ -143,9 +144,10 @@ class adofai:
                 for j in range(lastTileOfThreePlanets, i):
                     if rotateAngleList[j] == 360:
                         hairpinTurnDiff[j] = self.THREE_PLANET_PAUSE_BEAT_DIFF
-                    rotateAngleList[j] -= 60
-                    if rotateAngleList[j] <= 0:
-                        rotateAngleList[j] += 360
+                    if rotateAngleList[j] != 999 and rotateAngleList[j - 1] != 999:
+                        rotateAngleList[j] -= 60
+                        if rotateAngleList[j] <= 0:
+                            rotateAngleList[j] += 360
                 lastTileOfThreePlanets = -1
 
         # 处理长按事件
@@ -165,30 +167,35 @@ class adofai:
                     index += 1
                 if rotateAngleList[i['floor']] == 360:
                     # 适配发卡弯bug
-                    # 三球多一拍,二球少一拍
                     rotateAngleList[i['floor']] += max(i['duration'] + hairpinTurnDiff[hairpinTurnTiles[index]],
                                                        0) * 180
                 else:
                     # 正常情况
                     rotateAngleList[i['floor']] += i['duration'] * 180
 
-        # 去掉返回值里的中旋轨道
-        for i in rotateAngleList:
-            if i == 999:
-                rotateAngleList.pop(rotateAngleList.index(999))
+        # 保存未移除中旋的rotateAngleList
+        self.originRotateAngleList = rotateAngleList
 
-        self.rotateAngleList = rotateAngleList
-        return rotateAngleList
+        # 去掉返回值里的中旋
+        rotateAngleList2 = self._removeUselessTiles(rotateAngleList)
+        self.rotateAngleList = rotateAngleList2
+        return rotateAngleList2
 
     def getBeatList(self):
         # adofai().getBeatList()
         # 返回轨道代表的拍子数(列表,与bpm无关,是轨道角度/180)
-        rotateAngle = self.getRotateAngle()
+        self.getRotateAngle()
+        rotateAngle = self.originRotateAngleList
         beatList = []
-        for i in range(len(rotateAngle)):
-            beatList.append(rotateAngle[i] / 180)
-        self.beatList = beatList
-        return beatList
+        for i in rotateAngle:
+            if i == 999:
+                beatList.append(i)
+            else:
+                beatList.append(i / 180)
+        self.originBeatList = beatList
+        beatList2 = self._removeUselessTiles(beatList)
+        self.beatList = beatList2
+        return beatList2
 
     def getPlanetNumList(self):
         # adofai().getPlanetNumList()
@@ -209,17 +216,17 @@ class adofai:
         # 返回bpm变化情况(字典,格式为{轨道层数:bpm,轨道层数:bpm})
         bpm = self.__dict__['settings']['bpm']
         actions = self.__dict__['actions']
-        bpmList = {0: bpm}
+        bpmDict = {0: bpm}
         for i in actions:
             if i['eventType'] == 'SetSpeed':
                 if i['speedType'] == 'Bpm':
-                    bpmList[i['floor']] = i['beatsPerMinute']
+                    bpmDict[i['floor']] = i['beatsPerMinute']
                     bpm = i['beatsPerMinute']
                 if i['speedType'] == 'Multiplier':
                     bpm *= i['bpmMultiplier']
-                    bpmList[i['floor']] = bpm
-        self.bpmList = bpmList
-        return bpmList
+                    bpmDict[i['floor']] = bpm
+        self.bpmList = bpmDict
+        return bpmDict
 
     def getAbsBeatList(self, bpm=-1):
         # adofai().getAbsBeatList(bpm)
@@ -227,30 +234,17 @@ class adofai:
         # bpm不填时默认为谱面原bpm
 
         # 初始化
-        try:
-            angleData = self.__dict__['angleData']
-        except KeyError:
-            self.pathDataToAngleData()
-            angleData = self.__dict__['angleData']
         if bpm < 0:
             # 默认bpm
             bpm = self.settings['bpm']
-
-        # 还原中旋轨道
-        midspinList = []
-        for i in range(len(angleData)):
-            if angleData[i] == 999:
-                midspinList.append(i)
-        beats = self.getBeatList()
+        self.getBeatList()
+        beats = self.originBeatList
         bpmList = self.getBpmList()
         keys = list(bpmList.keys())
-        for i in midspinList:
-            beats.insert(i, 999)
+        autoTileList = self.getAutoTileList()
 
         # 处理速度事件
-        # 将与bpm无关的节拍根据bpmList中的速度变化情况
-        # 变为在指定bpm下轨道代表的拍子数
-
+        # 将与bpm无关的节拍根据bpmList中的速度变化情况变为在指定bpm下轨道代表的拍子数
         for i in range(len(keys)):
             retbpm = bpmList[keys[i]]
             muliter = retbpm / bpm
@@ -263,23 +257,105 @@ class adofai:
             for j in range(_from, _to):
                 if beats[j] != 999:
                     beats[j] /= muliter
+
+        # 处理自动方块
+        # 把自动方块的beats全部累加到前一个方块
+        for i in autoTileList:
+            if i[1] <= self.floorNum:
+                # 正常的自动方块
+                for j in range(i[0], i[1]):
+                    if beats[j] != 999:
+                        beats[i[0] - 1] += beats[j]
+                        beats[j] = 999
+            else:
+                # 持续到结束的自动方块,剩下的都舍去
+                for j in range(i[0] - 1, self.floorNum):
+                    beats[j] = 999
         absoluteBeatList = []
         for i in beats:
             if i != 999:
                 absoluteBeatList.append(i)
 
         self.absBeatList = absoluteBeatList
+        self.basebpm = bpm
         return absoluteBeatList
+
+    def _removeUselessTiles(self, l):
+        ret = []
+        for i in l:
+            if i != 999:
+                ret.append(i)
+        return ret
+
+    def getAutoTileList(self):
+        # adofai().getAutoTileList()
+        # 返回自动播放事件的出现情况(列表,列表中的每一项都是一个长度为2的列表,分别表示自动方块的开始与结束)
+        actions = self.__dict__['actions']
+        autoTileList = []
+        _autoTileEvents = {}
+        lastState = False
+        for i in actions:
+            if i['eventType'] == 'AutoPlayTiles' and i['enabled'] != lastState:
+                _autoTileEvents[i['floor']] = i['enabled']
+                lastState = i['enabled']
+        if lastState == True:
+            _autoTileEvents[self.floorNum + 1] = False
+        autoBegin = 0
+        for i in _autoTileEvents:
+            if autoBegin != 0 and _autoTileEvents[i] == False:
+                autoTileList.append([autoBegin, i])
+                autoBegin = 0
+            else:
+                autoBegin = i
+        self.autoTileList = autoTileList
+        return autoTileList
+
+    def getPressIntervalList(self):
+        # adofai().getPressIntervalList(bpm)
+        # 返回从上一个轨道到达该轨道所需时间(列表,单位为ms)
+        try:
+            absBeatList = self.absBeatList
+        except AttributeError:
+            absBeatList = self.getAbsBeatList()
+        beatPressTime = 60000 / self.basebpm
+        pressIntervalList = [0]
+        for i in absBeatList:
+            if i != 0:
+                pressIntervalList.append(beatPressTime * i)
+        self.pressIntervalList = pressIntervalList
+        return pressIntervalList
 
     def getHoldList(self):
         # adofai().getHoldList()
         # 返回长按事件的出现情况(字典,格式为{轨道层数:额外长按度数,轨道层数:额外长按度数})
         actions = self.__dict__['actions']
+        angleData = self.__dict__['angleData']
+        try:
+            autoTileList = self.autoTileList
+        except AttributeError:
+            autoTileList = self.getAutoTileList()
         holdList = {}
         for i in actions:
             if i['eventType'] == 'Hold':
                 holdList[i['floor']] = i['duration'] * 360
         self.holdList = holdList
+        holdFloors = list(holdList.keys())
+        holdFloors2 = copy.deepcopy(holdFloors)
+        for i in autoTileList:
+            for j in range(len(holdFloors)):
+                if i[0] <= holdFloors[j] < i[1]:
+                    holdFloors2[j] = -1
+                elif holdFloors[j] >= i[1]:
+                    holdFloors2[j] -= i[1] - i[0]
+        for i in range(len(angleData)):
+            if angleData[i] == 999:
+                for j in range(len(holdFloors2)):
+                    if holdFloors[j] > i:
+                        holdFloors2[j] -= 1
+        for i in range(len(holdFloors2)):
+            if holdFloors2[i] < 0:
+                del holdFloors2[i]
+        self.holdFloors = holdFloors2
         return holdList
 
     def angleDataToPathData(self):
@@ -372,10 +448,10 @@ class adofai:
             file = re.sub('" "', '""', file)
             f.write(file)
 
-    def removeEvents(self,args={}):
-        #adofai().removeEvents( {参数:值} )
-        #去除符合条件的事件
-        #示例:removeEvents({'floor':100})去除第100格的事件
+    def removeEvents(self, args={}):
+        # adofai().removeEvents( {参数:值} )
+        # 去除符合条件的事件
+        # 示例:removeEvents({'floor':100})去除第100格的事件
 
         actions = copy.deepcopy(self.actions)
         keys = list(args.keys())
@@ -383,6 +459,41 @@ class adofai:
             conform = 0
             for i in keys:
                 if actions[action][i] == args[i]:
-                    conform+=1
+                    conform += 1
                 if conform == len(keys):
                     self.actions.pop(action)
+
+    def removeAllVFX(self):
+        # adofai().removeAllEvents()
+        # 去除所有特效事件,保留旋转、变速、三球、长按、暂停、位置轨道事件
+        keys = ['SetSpeed', 'Twirl', 'PositionTrack', 'Hold', 'MultiPlanet', 'Pause']
+        defaultSettings = {
+            "relativeTo": "Player",
+            "position": [0, 0],
+            "rotation": 0,
+            "zoom": 350,
+            "backgroundColor": "000000",
+            "showDefaultBGIfNoImage": True,
+            "showDefaultBGTile": True,
+            "defaultBGTileColor": "101121",
+            "defaultBGShapeType": "Default",
+            "defaultBGShapeColor": "ffffff",
+            "bgImage": "",
+            "bgImageColor": "ffffff",
+            "trackStyle": "Standard",
+            "trackColorType": "Single",
+            "trackColor": "debb7b",
+            "stickToFloors": True,
+            "planetEase": "Linear",
+            "planetEaseParts": 1,
+            "planetEasePartBehavior": "Mirror",
+            "bgVideo": "",
+            "loopVideo": False,
+            "vidOffset": 0, }
+        actions = copy.deepcopy(self.actions)
+        for i in range(len(actions)):
+            if actions[i]['eventType'] not in keys:
+                self.actions.pop(i)
+        self.decorations = {}
+        for i in defaultSettings:
+            self.settings[i] = defaultSettings[i]
