@@ -500,6 +500,6 @@ class adofai:
                 actionsIndexArray.insert(0,i)
         for i in actionsIndexArray:
             self.actions.pop(i)
-        self.decorations = {}
+        self.decorations = []
         for i in defaultSettings:
             self.settings[i] = defaultSettings[i]
