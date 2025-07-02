@@ -14,6 +14,7 @@ class adofai:
     # 先别管
     TWO_PLANET_PAUSE_BEAT_DIFF = -1
     THREE_PLANET_PAUSE_BEAT_DIFF = -1
+    JSON_STRICT_PARSE = False
 
     def __init__(self, path):
 
@@ -23,8 +24,8 @@ class adofai:
         with open(path, 'r', encoding='utf-8-sig') as text:
             # 读取文件并转为字典
             text = text.read()
-            text = text.replace('""', '" "').replace(',}', '').replace('\n', '')
-            Dict = json.loads(text)
+            text = text.replace('""', '" "').replace(', }', '').replace('\n', '').replace('\t','')
+            Dict = json.loads(text,strict=self.JSON_STRICT_PARSE)
             try:
                 self.pathData = Dict['pathData']
                 self.floorNum = len(self.pathData)
@@ -41,7 +42,6 @@ class adofai:
     def getRotateAngle(self):
         # adofai().getRotateAngle()
         # 将angledata转为球在每个轨道上旋转的角度,返回一个列表
-
         angleData = self.__dict__['angleData']
         planetNumList = self.getPlanetNumList()
         holdList = self.getHoldList()
@@ -448,20 +448,23 @@ class adofai:
             file = re.sub('" "', '""', file)
             f.write(file)
 
-    def removeEvents(self, args={}):
+    def removeEvents(self, args:dict):
         # adofai().removeEvents( {参数:值} )
         # 去除符合条件的事件
         # 示例:removeEvents({'floor':100})去除第100格的事件
 
         actions = copy.deepcopy(self.actions)
         keys = list(args.keys())
+        actionsIndexArray = []
         for action in range(len(actions)):
             conform = 0
             for i in keys:
                 if actions[action][i] == args[i]:
                     conform += 1
                 if conform == len(keys):
-                    self.actions.pop(action)
+                    actionsIndexArray.insert(0,i)
+        for i in actionsIndexArray:
+            self.actions.pop(i)
 
     def removeAllVFX(self):
         # adofai().removeAllEvents()
@@ -490,10 +493,13 @@ class adofai:
             "bgVideo": "",
             "loopVideo": False,
             "vidOffset": 0, }
-        actions = copy.deepcopy(self.actions)
-        for i in range(len(actions)):
-            if actions[i]['eventType'] not in keys:
-                self.actions.pop(i)
+        _actions = copy.deepcopy(self.actions)
+        actionsIndexArray = []
+        for i in range(len(_actions)):
+            if _actions[i]['eventType'] not in keys:
+                actionsIndexArray.insert(0,i)
+        for i in actionsIndexArray:
+            self.actions.pop(i)
         self.decorations = {}
         for i in defaultSettings:
             self.settings[i] = defaultSettings[i]
